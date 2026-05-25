@@ -1,0 +1,18 @@
+fastapi==0.110.0
+uvicorn[standard]==0.27.0
+chromadb==0.4.22; python_version < "3.12"
+chromadb-client==0.5.20; python_version >= "3.12"
+sentence-transformers==2.6.0
+numpy==1.26.4
+PyMuPDF==1.23.26
+python-docx==1.1.0
+groq==0.5.0
+python-jose[cryptography]==3.3.0
+passlib==1.7.4
+python-dotenv==1.0.1
+aiosqlite==0.20.0
+apscheduler==3.10.4
+python-multipart==0.0.9
+aiofiles==23.2.1
+email-validator==2.2.0
+certifi==2026.5.20
