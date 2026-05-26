@@ -12,8 +12,8 @@ from language import build_system_prompt, detect_language, low_confidence_messag
 load_dotenv()
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-MODEL_NAME = "llama3-8b-8192"
-LOW_CONFIDENCE_DISTANCE = 0.82
+MODEL_NAME = "llama-3.1-8b-instant"
+LOW_CONFIDENCE_DISTANCE = 0.95
 TOP_K = 6
 
 _groq_client: Groq | None = None
@@ -154,6 +154,9 @@ async def get_answer(query: str, college_id: str, college_name: str) -> dict[str
         }
     except Exception as exc:  # noqa: BLE001
         elapsed_ms = int((time.perf_counter() - start_time) * 1000)
+
+        print(f"RAG ERROR: {exc}", flush=True)
+
         fallback_answer = (
             "Mujhe temporary technical issue aa rahi hai. Admin Office se confirm karein."
             if language == "hindi"
