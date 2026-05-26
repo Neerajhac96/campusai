@@ -3,7 +3,7 @@ uvicorn[standard]==0.27.0
 chromadb>=0.5.0
 sentence-transformers==2.6.0
 numpy==1.26.4
-PyMuPDF==1.23.26
+PyMuPDF==1.24.9
 python-docx==1.1.0
 groq==0.5.0
 python-jose[cryptography]==3.3.0

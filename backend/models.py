@@ -19,6 +19,8 @@ DocumentCategory = Literal[
     "syllabus",
     "rules",
     "notices",
+    "registrar",
+    "notes",
     "general",
 ]
 
