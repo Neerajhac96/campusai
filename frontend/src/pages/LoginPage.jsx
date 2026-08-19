@@ -1,26 +1,30 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 const LoginPage = () => {
   const { login, user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  const routeForRole = (role) => {
+    if (role === "student") return "/dashboard";
+    if (role === "admin") return "/admin";
+    if (role === "hod") return "/hod";
+    if (role === "dept_coordinator") return "/coordinator";
+    if (role === "faculty") return "/faculty";
+    return "/super";
+  };
+
   useEffect(() => {
     if (!isAuthenticated || !user) {
       return;
     }
-    if (user.role === "student") {
-      navigate("/chat", { replace: true });
-    } else if (user.role === "admin") {
-      navigate("/admin", { replace: true });
-    } else if (user.role === "super_admin") {
-      navigate("/super", { replace: true });
-    }
+    navigate(routeForRole(user.role), { replace: true });
   }, [isAuthenticated, user, navigate]);
 
   const onSubmit = async (event) => {
@@ -29,13 +33,7 @@ const LoginPage = () => {
     setLoading(true);
     try {
       const loggedInUser = await login(email, password);
-      if (loggedInUser.role === "student") {
-        navigate("/chat", { replace: true });
-      } else if (loggedInUser.role === "admin") {
-        navigate("/admin", { replace: true });
-      } else {
-        navigate("/super", { replace: true });
-      }
+      navigate(routeForRole(loggedInUser.role), { replace: true });
     } catch (err) {
       setError(err.message || "Invalid credentials");
     } finally {
@@ -57,6 +55,16 @@ const LoginPage = () => {
         </div>
 
         <form onSubmit={onSubmit} className="mt-6 space-y-4">
+          {location.state?.message && (
+            <p
+              className={`rounded-md px-3 py-2 text-sm ${
+                location.state.kind === "auth" ? "bg-amber-50 text-amber-700" : "bg-green-50 text-green-700"
+              }`}
+            >
+              {location.state.message}
+            </p>
+          )}
+
           <div>
             <label htmlFor="email" className="mb-1 block text-sm font-medium text-gray-700">
               Email
@@ -96,10 +104,20 @@ const LoginPage = () => {
           </button>
         </form>
 
+        <p className="mt-4 text-center text-sm text-gray-600">
+          New student?{" "}
+          <Link to="/register" className="font-semibold text-wa-dark">
+            Register here
+          </Link>
+        </p>
+
         <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600">
           <p className="font-semibold text-gray-700">Demo Credentials</p>
           <p>Admin: admin@demo.com / admin123</p>
           <p>Student: student@demo.com / student123</p>
+          <p>HOD: hod.cse@demo.com / hod123</p>
+          <p>Coordinator: coord.cse@demo.com / coord123</p>
+          <p>Faculty: faculty.cse@demo.com / faculty123</p>
           <p>Super Admin: super@chatdeva.com / super123</p>
         </div>
       </div>

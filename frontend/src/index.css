@@ -11,3 +11,51 @@ body {
 * {
   scrollbar-width: thin;
 }
+
+.campusai-markdown p {
+  margin: 0 0 0.65rem;
+}
+
+.campusai-markdown p:last-child {
+  margin-bottom: 0;
+}
+
+.campusai-markdown ul,
+.campusai-markdown ol {
+  margin: 0.5rem 0;
+  padding-left: 1.25rem;
+}
+
+.campusai-markdown ul {
+  list-style: disc;
+}
+
+.campusai-markdown ol {
+  list-style: decimal;
+}
+
+.campusai-markdown code {
+  border-radius: 0.35rem;
+  background: rgba(15, 23, 42, 0.08);
+  padding: 0.1rem 0.3rem;
+  font-size: 0.85em;
+}
+
+.campusai-markdown table {
+  margin: 0.75rem 0;
+  width: 100%;
+  border-collapse: collapse;
+  overflow: hidden;
+  border-radius: 0.5rem;
+}
+
+.campusai-markdown th,
+.campusai-markdown td {
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  padding: 0.45rem 0.55rem;
+  text-align: left;
+}
+
+.campusai-markdown th {
+  background: rgba(7, 94, 84, 0.08);
+}

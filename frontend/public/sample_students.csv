@@ -1,0 +1,6 @@
+admission_no,name,department,course,year,semester,section,session,batch,roll_no,phone,gender,category,is_hosteler
+2021CS001,Rahul Sharma,Computer Science,BTech CSE,3,6,B,2021-25,2021,21CS001,9876543210,Male,General,FALSE
+2021CS002,Priya Singh,Computer Science,BTech CSE,3,6,A,2021-25,2021,21CS002,9876543211,Female,OBC,TRUE
+2022MC001,Amit Kumar,MCA,MCA,2,4,A,2022-24,2022,22MC001,9876543212,Male,General,FALSE
+2023IT001,Sneha Patel,Information Technology,BTech IT,1,2,C,2023-27,2023,23IT001,9876543213,Female,SC,FALSE
+# Demo faculty accounts: HOD hod.cse@demo.com / hod123; Coordinator coord.cse@demo.com / coord123; Faculty faculty.cse@demo.com / faculty123,,,,,,,,,,,,,

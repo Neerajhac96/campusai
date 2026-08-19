@@ -1,10 +1,21 @@
-import { useEffect, useMemo, useState } from "react";
-import { createStudent, getAdminUsers, getAnalytics, getDocuments, getRecentAnalytics } from "../api/client";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  bulkUploadStudents,
+  createFaculty,
+  deleteFaculty,
+  getAdminUsers,
+  getAdmittedStudents,
+  getAnalytics,
+  getDepartments,
+  getDocuments,
+  getFaculty,
+  getRecentAnalytics,
+} from "../api/client";
 import AnalyticsDashboard from "../components/AnalyticsDashboard";
 import DocumentManager from "../components/DocumentManager";
 import Navbar from "../components/Navbar";
 
-const tabs = ["overview", "documents", "analytics", "students"];
+const tabs = ["overview", "documents", "analytics", "students", "faculty"];
 
 const AdminDashboard = () => {
   const [activeTab, setActiveTab] = useState("overview");
@@ -13,11 +24,25 @@ const AdminDashboard = () => {
   const [recentQueries, setRecentQueries] = useState([]);
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(false);
-
-  const [showStudentForm, setShowStudentForm] = useState(false);
-  const [studentEmail, setStudentEmail] = useState("");
-  const [studentPassword, setStudentPassword] = useState("");
-  const [studentName, setStudentName] = useState("");
+  const [admittedStudents, setAdmittedStudents] = useState([]);
+  const [uploadResult, setUploadResult] = useState(null);
+  const [studentSearch, setStudentSearch] = useState("");
+  const [departmentFilter, setDepartmentFilter] = useState("");
+  const [yearFilter, setYearFilter] = useState("");
+  const [sectionFilter, setSectionFilter] = useState("");
+  const [registeredFilter, setRegisteredFilter] = useState("");
+  const [faculty, setFaculty] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [facultyForm, setFacultyForm] = useState({
+    name: "",
+    email: "",
+    employee_id: "",
+    department: "",
+    designation: "Assistant Professor",
+    role_type: "faculty",
+    subjects: "",
+  });
+  const fileInputRef = useRef(null);
 
   const loadOverview = async () => {
     setLoading(true);
@@ -43,20 +68,94 @@ const AdminDashboard = () => {
     loadOverview();
   }, []);
 
-  const addStudent = async (event) => {
+  const loadAdmittedStudents = async () => {
+    try {
+      const data = await getAdmittedStudents({
+        ...(departmentFilter ? { department: departmentFilter } : {}),
+        ...(yearFilter ? { year: yearFilter } : {}),
+        ...(sectionFilter ? { section: sectionFilter } : {}),
+        ...(registeredFilter ? { is_registered: registeredFilter } : {}),
+      });
+      setAdmittedStudents(data.items || []);
+    } catch (error) {
+      window.alert(error.message);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "students") {
+      loadAdmittedStudents();
+    }
+  }, [activeTab, departmentFilter, yearFilter, sectionFilter, registeredFilter]);
+
+  const loadFaculty = async () => {
+    try {
+      const [facultyData, departmentData] = await Promise.all([getFaculty(), getDepartments()]);
+      setFaculty(facultyData || []);
+      setDepartments(departmentData || []);
+      if (!facultyForm.department && departmentData?.[0]?.code) {
+        setFacultyForm((current) => ({ ...current, department: departmentData[0].code }));
+      }
+    } catch (error) {
+      window.alert(error.message);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "faculty") {
+      loadFaculty();
+    }
+  }, [activeTab]);
+
+  const uploadStudentCsv = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+    try {
+      const result = await bulkUploadStudents(file);
+      setUploadResult(result);
+      await loadAdmittedStudents();
+    } catch (error) {
+      window.alert(error.message);
+    } finally {
+      event.target.value = "";
+    }
+  };
+
+  const submitFaculty = async (event) => {
     event.preventDefault();
     try {
-      await createStudent({
-        email: studentEmail,
-        password: studentPassword,
-        name: studentName,
+      const result = await createFaculty({
+        ...facultyForm,
+        subjects: facultyForm.subjects
+          .split(",")
+          .map((item) => item.trim())
+          .filter(Boolean),
       });
-      setStudentEmail("");
-      setStudentPassword("");
-      setStudentName("");
-      setShowStudentForm(false);
-      const users = await getAdminUsers();
-      setStudents(users || []);
+      window.alert(`Faculty created. Temporary password: ${result.temp_password}`);
+      setFacultyForm({
+        name: "",
+        email: "",
+        employee_id: "",
+        department: departments[0]?.code || "",
+        designation: "Assistant Professor",
+        role_type: "faculty",
+        subjects: "",
+      });
+      await loadFaculty();
+    } catch (error) {
+      window.alert(error.message);
+    }
+  };
+
+  const deactivateFaculty = async (userId) => {
+    if (!window.confirm("Deactivate this faculty account?")) {
+      return;
+    }
+    try {
+      await deleteFaculty(userId);
+      await loadFaculty();
     } catch (error) {
       window.alert(error.message);
     }
@@ -68,6 +167,18 @@ const AdminDashboard = () => {
     }
     return [...(analytics.queries_per_day || [])].slice(-7);
   }, [analytics]);
+
+  const filteredAdmittedStudents = useMemo(() => {
+    const query = studentSearch.trim().toLowerCase();
+    if (!query) {
+      return admittedStudents;
+    }
+    return admittedStudents.filter((student) => {
+      const name = (student.name || "").toLowerCase();
+      const admissionNo = (student.admission_no || "").toLowerCase();
+      return name.includes(query) || admissionNo.includes(query);
+    });
+  }, [admittedStudents, studentSearch]);
 
   return (
     <div className="min-h-screen bg-wa-bg">
@@ -174,74 +285,253 @@ const AdminDashboard = () => {
         {activeTab === "students" && (
           <div className="space-y-4">
             <div className="flex items-center justify-between rounded-xl bg-white p-4 shadow-sm">
-              <h3 className="text-sm font-semibold text-gray-800">Registered Students</h3>
-              <button
-                type="button"
-                onClick={() => setShowStudentForm((prev) => !prev)}
-                className="rounded-md bg-wa-dark px-3 py-2 text-sm font-semibold text-white"
-              >
-                Add Student
-              </button>
+              <div>
+                <h3 className="text-sm font-semibold text-gray-800">Admitted Students</h3>
+                <p className="mt-1 text-xs text-gray-500">Upload college admission lists and track registration.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href="/sample_students.csv"
+                  className="rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700"
+                >
+                  Sample CSV
+                </a>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="rounded-md bg-wa-dark px-3 py-2 text-sm font-semibold text-white"
+                >
+                  Upload CSV
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".csv"
+                  className="hidden"
+                  onChange={uploadStudentCsv}
+                />
+              </div>
             </div>
 
-            {showStudentForm && (
-              <form onSubmit={addStudent} className="rounded-xl bg-white p-4 shadow-sm">
-                <div className="grid gap-3 md:grid-cols-3">
-                  <input
-                    type="text"
-                    required
-                    placeholder="Student name"
-                    value={studentName}
-                    onChange={(event) => setStudentName(event.target.value)}
-                    className="rounded-md border border-gray-300 p-2 text-sm"
-                  />
-                  <input
-                    type="email"
-                    required
-                    placeholder="student@college.com"
-                    value={studentEmail}
-                    onChange={(event) => setStudentEmail(event.target.value)}
-                    className="rounded-md border border-gray-300 p-2 text-sm"
-                  />
-                  <input
-                    type="password"
-                    required
-                    placeholder="Password"
-                    value={studentPassword}
-                    onChange={(event) => setStudentPassword(event.target.value)}
-                    className="rounded-md border border-gray-300 p-2 text-sm"
-                  />
+            {uploadResult && (
+              <div className="rounded-xl bg-white p-4 shadow-sm">
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div>
+                    <p className="text-xs text-gray-500">Rows Processed</p>
+                    <p className="text-xl font-bold text-wa-dark">{uploadResult.total_uploaded}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Success</p>
+                    <p className="text-xl font-bold text-green-600">{uploadResult.success}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Failed</p>
+                    <p className="text-xl font-bold text-red-600">{uploadResult.failed}</p>
+                  </div>
                 </div>
-                <button
-                  type="submit"
-                  className="mt-3 rounded-md bg-wa-green px-4 py-2 text-sm font-semibold text-white"
-                >
-                  Create Student Account
-                </button>
-              </form>
+                {uploadResult.errors?.length > 0 && (
+                  <div className="mt-3 max-h-32 overflow-y-auto rounded-md bg-red-50 p-3 text-xs text-red-700">
+                    {uploadResult.errors.map((item) => (
+                      <p key={item}>{item}</p>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
+
+            <div className="grid gap-3 rounded-xl bg-white p-4 shadow-sm md:grid-cols-5">
+              <input
+                type="text"
+                value={studentSearch}
+                onChange={(event) => setStudentSearch(event.target.value)}
+                placeholder="Search name or admission no"
+                className="rounded-md border border-gray-300 p-2 text-sm md:col-span-2"
+              />
+              <input
+                type="text"
+                value={departmentFilter}
+                onChange={(event) => setDepartmentFilter(event.target.value)}
+                placeholder="Department"
+                className="rounded-md border border-gray-300 p-2 text-sm"
+              />
+              <input
+                type="text"
+                value={sectionFilter}
+                onChange={(event) => setSectionFilter(event.target.value)}
+                placeholder="Section"
+                className="rounded-md border border-gray-300 p-2 text-sm"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <select
+                  value={yearFilter}
+                  onChange={(event) => setYearFilter(event.target.value)}
+                  className="rounded-md border border-gray-300 p-2 text-sm"
+                >
+                  <option value="">Year</option>
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="4">4</option>
+                </select>
+                <select
+                  value={registeredFilter}
+                  onChange={(event) => setRegisteredFilter(event.target.value)}
+                  className="rounded-md border border-gray-300 p-2 text-sm"
+                >
+                  <option value="">All</option>
+                  <option value="true">Registered</option>
+                  <option value="false">Pending</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto rounded-xl bg-white p-4 shadow-sm">
+              <table className="min-w-full text-left text-sm">
+                <thead className="text-xs uppercase text-gray-500">
+                  <tr>
+                    <th className="py-2 pr-4">Admission No</th>
+                    <th className="py-2 pr-4">Name</th>
+                    <th className="py-2 pr-4">Department</th>
+                    <th className="py-2 pr-4">Year</th>
+                    <th className="py-2 pr-4">Section</th>
+                    <th className="py-2 pr-4">Registered</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredAdmittedStudents.map((student) => (
+                    <tr key={student.id} className="border-t border-gray-100">
+                      <td className="py-2 pr-4 font-semibold text-gray-800">{student.admission_no}</td>
+                      <td className="py-2 pr-4">{student.name}</td>
+                      <td className="py-2 pr-4">{student.department}</td>
+                      <td className="py-2 pr-4">{student.year}</td>
+                      <td className="py-2 pr-4">{student.section}</td>
+                      <td className="py-2 pr-4">
+                        <span
+                          className={`rounded-full px-2 py-1 text-xs font-semibold ${
+                            student.is_registered ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700"
+                          }`}
+                        >
+                          {student.is_registered ? "Yes" : "No"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                  {filteredAdmittedStudents.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="py-4 text-sm text-gray-500">
+                        No admitted students found.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "faculty" && (
+          <div className="space-y-4">
+            <form onSubmit={submitFaculty} className="grid gap-3 rounded-xl bg-white p-4 shadow-sm md:grid-cols-4">
+              <input
+                value={facultyForm.name}
+                onChange={(event) => setFacultyForm({ ...facultyForm, name: event.target.value })}
+                placeholder="Faculty name"
+                className="rounded-md border border-gray-300 p-2 text-sm"
+                required
+              />
+              <input
+                type="email"
+                value={facultyForm.email}
+                onChange={(event) => setFacultyForm({ ...facultyForm, email: event.target.value })}
+                placeholder="Email"
+                className="rounded-md border border-gray-300 p-2 text-sm"
+                required
+              />
+              <input
+                value={facultyForm.employee_id}
+                onChange={(event) => setFacultyForm({ ...facultyForm, employee_id: event.target.value })}
+                placeholder="Employee ID"
+                className="rounded-md border border-gray-300 p-2 text-sm"
+                required
+              />
+              <select
+                value={facultyForm.department}
+                onChange={(event) => setFacultyForm({ ...facultyForm, department: event.target.value })}
+                className="rounded-md border border-gray-300 p-2 text-sm"
+                required
+              >
+                <option value="">Department</option>
+                {departments.map((department) => (
+                  <option key={department.id || department.code} value={department.code}>
+                    {department.name} ({department.code})
+                  </option>
+                ))}
+              </select>
+              <input
+                value={facultyForm.designation}
+                onChange={(event) => setFacultyForm({ ...facultyForm, designation: event.target.value })}
+                placeholder="Designation"
+                className="rounded-md border border-gray-300 p-2 text-sm"
+              />
+              <select
+                value={facultyForm.role_type}
+                onChange={(event) => setFacultyForm({ ...facultyForm, role_type: event.target.value })}
+                className="rounded-md border border-gray-300 p-2 text-sm"
+              >
+                <option value="faculty">Faculty</option>
+                <option value="dept_coordinator">Dept Coordinator</option>
+                <option value="hod">HOD</option>
+              </select>
+              <input
+                value={facultyForm.subjects}
+                onChange={(event) => setFacultyForm({ ...facultyForm, subjects: event.target.value })}
+                placeholder="Subjects, comma separated"
+                className="rounded-md border border-gray-300 p-2 text-sm md:col-span-2"
+              />
+              <button type="submit" className="rounded-md bg-wa-dark px-3 py-2 text-sm font-semibold text-white">
+                Add Faculty
+              </button>
+            </form>
 
             <div className="overflow-x-auto rounded-xl bg-white p-4 shadow-sm">
               <table className="min-w-full text-left text-sm">
                 <thead className="text-xs uppercase text-gray-500">
                   <tr>
                     <th className="py-2 pr-4">Name</th>
-                    <th className="py-2 pr-4">Email</th>
+                    <th className="py-2 pr-4">Department</th>
+                    <th className="py-2 pr-4">Designation</th>
+                    <th className="py-2 pr-4">Role</th>
                     <th className="py-2 pr-4">Status</th>
+                    <th className="py-2 pr-4">Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {students.map((student) => (
-                    <tr key={student.id} className="border-t border-gray-100">
-                      <td className="py-2 pr-4">{student.name}</td>
-                      <td className="py-2 pr-4">{student.email}</td>
-                      <td className="py-2 pr-4">{student.is_active ? "Active" : "Inactive"}</td>
+                  {faculty.map((member) => (
+                    <tr key={member.user_id} className="border-t border-gray-100">
+                      <td className="py-2 pr-4 font-semibold text-gray-800">{member.name}</td>
+                      <td className="py-2 pr-4">{member.department}</td>
+                      <td className="py-2 pr-4">{member.designation}</td>
+                      <td className="py-2 pr-4">
+                        <span className="rounded-full bg-green-50 px-2 py-1 text-xs font-semibold text-wa-dark">
+                          {member.role_type}
+                        </span>
+                      </td>
+                      <td className="py-2 pr-4">{member.is_active ? "Active" : "Inactive"}</td>
+                      <td className="py-2 pr-4">
+                        <button
+                          type="button"
+                          onClick={() => deactivateFaculty(member.user_id)}
+                          className="rounded-md border border-red-200 px-3 py-1 text-xs font-semibold text-red-600"
+                        >
+                          Deactivate
+                        </button>
+                      </td>
                     </tr>
                   ))}
-                  {students.length === 0 && (
+                  {faculty.length === 0 && (
                     <tr>
-                      <td colSpan={3} className="py-4 text-sm text-gray-500">
-                        No students found.
+                      <td colSpan={6} className="py-4 text-sm text-gray-500">
+                        No faculty accounts found.
                       </td>
                     </tr>
                   )}

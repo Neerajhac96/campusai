@@ -11,6 +11,8 @@ from routes.admin_routes import router as admin_router
 from routes.analytics_routes import router as analytics_router
 from routes.auth_routes import router as auth_router
 from routes.chat_routes import router as chat_router
+from routes.faculty_routes import router as faculty_router
+from routes.student_routes import router as student_router
 from routes.super_admin_routes import router as super_admin_router
 from scheduler import start_scheduler, stop_scheduler
 
@@ -46,9 +48,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+origins_env = os.getenv("CORS_ALLOWED_ORIGINS")
+allowed_origins = (
+    [o.strip() for o in origins_env.split(",") if o.strip()]
+    if origins_env
+    else ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"]
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -59,6 +68,8 @@ app.include_router(chat_router, prefix="/chat")
 app.include_router(admin_router, prefix="/admin")
 app.include_router(analytics_router, prefix="/admin")
 app.include_router(super_admin_router, prefix="/super")
+app.include_router(student_router, prefix="/student")
+app.include_router(faculty_router, prefix="/faculty")
 
 
 @app.get("/")

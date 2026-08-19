@@ -109,17 +109,32 @@ class LocalPersistentCollection:
             collections[self.collection_name] = items
             self._save_store(store)
 
+    def _matches_where(self, metadata: dict[str, Any], where: dict[str, Any] | None) -> bool:
+        if not where:
+            return True
+        if "$or" in where:
+            return any(self._matches_where(metadata, clause) for clause in where["$or"])
+        if "$and" in where:
+            return all(self._matches_where(metadata, clause) for clause in where["$and"])
+        return all(metadata.get(key) == value for key, value in where.items())
+
     def query(
         self,
         *,
         query_embeddings: list[list[float]],
         n_results: int = 6,
         include: list[str] | None = None,
+        where: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         include = include or ["documents", "metadatas", "distances"]
         with _fallback_store_lock:
             store = self._load_store()
             items = store.get("collections", {}).get(self.collection_name, [])
+            items = [
+                item
+                for item in items
+                if self._matches_where(item.get("metadata", {}), where)
+            ]
 
         if not items:
             return {"ids": [[]], "documents": [[]], "metadatas": [[]], "distances": [[]]}
@@ -280,6 +295,9 @@ async def ingest_document(
     doc_id: str,
     doc_name: str,
     category: str,
+    department: str | None = None,
+    subject: str | None = None,
+    doc_scope: str = "college",
 ) -> dict[str, Any]:
     try:
         pages = await asyncio.to_thread(extract_text, file_path)
@@ -312,6 +330,9 @@ async def ingest_document(
                 "category": category,
                 "page": chunk["page"],
                 "indexed_at": timestamp,
+                "department": department or "",
+                "subject": subject or "",
+                "doc_scope": doc_scope,
             }
             for chunk in chunks
         ]

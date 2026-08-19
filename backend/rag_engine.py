@@ -5,6 +5,7 @@ from typing import Any
 from dotenv import load_dotenv
 from groq import Groq
 
+from database import fetch_one
 from ingest import get_collection, get_embedding_model
 from language import build_system_prompt, detect_language, low_confidence_message, no_result_message
 
@@ -59,7 +60,95 @@ def _append_source_if_missing(answer: str, sources: list[str]) -> str:
     return f"{answer.rstrip()}\n\nSource: {', '.join(sources)}"
 
 
-async def get_answer(query: str, college_id: str, college_name: str) -> dict[str, Any]:
+async def _get_student_department_values(user_id: str | None, college_id: str) -> list[str]:
+    if not user_id:
+        return []
+    profile = await fetch_one(
+        """
+        SELECT sp.department, d.code AS department_code, d.name AS department_name
+        FROM student_profiles sp
+        LEFT JOIN departments d
+          ON d.college_id = sp.college_id
+         AND (lower(d.name) = lower(sp.department) OR lower(d.code) = lower(sp.department))
+        WHERE sp.user_id = ? AND sp.college_id = ?
+        """,
+        (user_id, college_id),
+    )
+    if not profile:
+        return []
+    values = [
+        profile.get("department"),
+        profile.get("department_code"),
+        profile.get("department_name"),
+    ]
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        if value and value not in seen:
+            seen.add(value)
+            result.append(value)
+    return result
+
+
+def _build_document_scope_filter(department_values: list[str]) -> dict[str, Any]:
+    filters: list[dict[str, Any]] = [{"doc_scope": "college"}]
+    for department in department_values:
+        filters.append(
+            {
+                "$and": [
+                    {"doc_scope": "department"},
+                    {"department": department},
+                ]
+            }
+        )
+        filters.append(
+            {
+                "$and": [
+                    {"doc_scope": "subject"},
+                    {"department": department},
+                ]
+            }
+        )
+    return {"$or": filters} if len(filters) > 1 else filters[0]
+
+
+def _metadata_allowed(metadata: dict[str, Any], department_values: list[str]) -> bool:
+    doc_scope = metadata.get("doc_scope") or "college"
+    if doc_scope == "college":
+        return True
+    if doc_scope in {"department", "subject"}:
+        return bool(metadata.get("department") in department_values)
+    return False
+
+
+def _filter_query_result(
+    result: dict[str, Any],
+    department_values: list[str],
+) -> tuple[list[str], list[dict[str, Any]], list[float]]:
+    documents = result.get("documents", [[]])[0]
+    metadatas = result.get("metadatas", [[]])[0]
+    distances = result.get("distances", [[]])[0]
+
+    filtered_docs: list[str] = []
+    filtered_metas: list[dict[str, Any]] = []
+    filtered_distances: list[float] = []
+    for doc_text, metadata, distance in zip(documents, metadatas, distances):
+        if _metadata_allowed(metadata, department_values):
+            filtered_docs.append(doc_text)
+            filtered_metas.append(metadata)
+            filtered_distances.append(distance)
+        if len(filtered_docs) >= TOP_K:
+            break
+    return filtered_docs, filtered_metas, filtered_distances
+
+
+async def get_answer(
+    query: str,
+    college_id: str,
+    college_name: str,
+    user_id: str | None = None,
+    conversation_history: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
     start_time = time.perf_counter()
     language = detect_language(query)
 
@@ -72,15 +161,23 @@ async def get_answer(query: str, college_id: str, college_name: str) -> dict[str
         )[0].tolist()
 
         collection = get_collection(college_id)
+        department_values = await _get_student_department_values(user_id, college_id)
+        where_filter = _build_document_scope_filter(department_values)
         result = collection.query(
             query_embeddings=[query_embedding],
             n_results=TOP_K,
             include=["documents", "metadatas", "distances"],
+            where=where_filter,
         )
 
-        documents = result.get("documents", [[]])[0]
-        metadatas = result.get("metadatas", [[]])[0]
-        distances = result.get("distances", [[]])[0]
+        documents, metadatas, distances = _filter_query_result(result, department_values)
+        if not documents:
+            legacy_result = collection.query(
+                query_embeddings=[query_embedding],
+                n_results=TOP_K * 4,
+                include=["documents", "metadatas", "distances"],
+            )
+            documents, metadatas, distances = _filter_query_result(legacy_result, department_values)
 
         if not documents:
             elapsed_ms = int((time.perf_counter() - start_time) * 1000)
@@ -137,6 +234,7 @@ async def get_answer(query: str, college_id: str, college_name: str) -> dict[str
             max_tokens=700,
             messages=[
                 {"role": "system", "content": system_prompt},
+                *((conversation_history or [])[-6:]),
                 {"role": "user", "content": user_prompt},
             ],
         )

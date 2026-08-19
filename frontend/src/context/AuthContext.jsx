@@ -1,65 +1,111 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { getMe, login as loginRequest, logoutRequest, setUnauthorizedHandler } from "../api/client";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import {
+  clearAuthToken,
+  getAuthToken,
+  getMe,
+  login as loginRequest,
+  logoutRequest,
+  setAuthToken,
+  setUnauthorizedHandler,
+} from "../api/client";
 
 const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
+  const navigate = useNavigate();
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(localStorage.getItem("campusai_token"));
+  const [token, setToken] = useState(getAuthToken());
   const [loading, setLoading] = useState(true);
 
-  const logout = async () => {
+  const clearSession = useCallback(() => {
+    clearAuthToken();
+    setUser(null);
+    setToken(null);
+  }, []);
+
+  const redirectToLogin = useCallback(
+    (message) => {
+      navigate("/login", {
+        replace: true,
+        state: message ? { message, kind: "auth" } : undefined,
+      });
+    },
+    [navigate]
+  );
+
+  const logout = useCallback(async (options = {}) => {
+    const { redirect = true, message } = options;
     try {
-      if (token) {
+      const currentToken = getAuthToken();
+      if (currentToken) {
         await logoutRequest();
       }
     } catch {
       // Token invalidation is client-side for JWT; ignore request failure
     } finally {
-      localStorage.removeItem("campusai_token");
-      setUser(null);
-      setToken(null);
+      clearSession();
+      if (redirect) {
+        redirectToLogin(message);
+      }
     }
-  };
+  }, [clearSession, redirectToLogin]);
 
-  const login = async (email, password) => {
+  const login = useCallback(async (email, password) => {
     const data = await loginRequest(email, password);
-    localStorage.setItem("campusai_token", data.access_token);
+    setAuthToken(data.access_token);
     setToken(data.access_token);
-    setUser(data.user);
-    return data.user;
-  };
+    try {
+      const validatedUser = await getMe();
+      setUser(validatedUser);
+      return validatedUser;
+    } catch (error) {
+      clearSession();
+      throw error;
+    }
+  }, [clearSession]);
 
   useEffect(() => {
-    setUnauthorizedHandler(() => {
-      localStorage.removeItem("campusai_token");
-      setToken(null);
-      setUser(null);
+    setUnauthorizedHandler(({ message } = {}) => {
+      clearSession();
+      redirectToLogin(message);
+      return true;
     });
-  }, []);
+  }, [clearSession, redirectToLogin]);
 
   useEffect(() => {
+    let active = true;
+
     const restoreSession = async () => {
       try {
-        const storedToken = localStorage.getItem("campusai_token");
+        const storedToken = getAuthToken();
         if (!storedToken) {
-          setLoading(false);
+          if (active) {
+            setLoading(false);
+          }
           return;
         }
-        setToken(storedToken);
+        if (active) {
+          setToken(storedToken);
+        }
         const profile = await getMe();
-        setUser(profile);
+        if (active) {
+          setUser(profile);
+        }
       } catch {
-        localStorage.removeItem("campusai_token");
-        setToken(null);
-        setUser(null);
+        clearSession();
       } finally {
-        setLoading(false);
+        if (active) {
+          setLoading(false);
+        }
       }
     };
 
     restoreSession();
-  }, []);
+    return () => {
+      active = false;
+    };
+  }, [clearSession]);
 
   const value = useMemo(
     () => ({
@@ -70,7 +116,7 @@ export const AuthProvider = ({ children }) => {
       logout,
       isAuthenticated: Boolean(user && token),
     }),
-    [user, token, loading]
+    [user, token, loading, login, logout]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

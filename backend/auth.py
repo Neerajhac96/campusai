@@ -13,10 +13,19 @@ from database import fetch_one
 
 load_dotenv()
 
-SECRET_KEY = os.getenv("SECRET_KEY", "chatdeva2024productionsecretkey")
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    if os.getenv("ENV", "development").lower() == "production":
+        raise RuntimeError("SECRET_KEY environment variable is missing in production!")
+    SECRET_KEY = "chatdeva_dev_fallback_secret_key_change_in_production"
+
 ALGORITHM = "HS256"
 TOKEN_EXPIRE_HOURS = int(os.getenv("TOKEN_EXPIRE_HOURS", "24"))
-PASSWORD_CONTEXT = CryptContext(schemes=["sha256_crypt"], deprecated="auto")
+PASSWORD_CONTEXT = CryptContext(
+    schemes=["pbkdf2_sha256", "sha256_crypt"],
+    deprecated="auto",
+    pbkdf2_sha256__default_rounds=29000,
+)
 AUTH_SCHEME = HTTPBearer(auto_error=False)
 
 
